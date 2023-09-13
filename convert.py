@@ -17,12 +17,12 @@ from spiga.inference.framework import SPIGAFramework
 dataset = 'wflw'
 processor = SPIGAFramework(ModelConfig(dataset))
 
-#batch_crops, crop_bboxes = processor.pretreat(image, [bbox])
+batch_crops, crop_bboxes = processor.pretreat(image, [bbox])
 #outputs = self.net_forward(batch_crops)
 #features = self.postreatment(outputs, crop_bboxes, bboxes)
 features = processor.inference(image, [bbox])
 
-"""
+
 ##############################################################
 net = processor.model
 net.eval()
@@ -32,19 +32,28 @@ device = torch.device("cpu")
 net = net.to(device)
 
 ##################export###############
-output_onnx = 'faceDetector.onnx'
+output_onnx = 'spiga.onnx'
 print("==> Exporting model to ONNX format at '{}'".format(output_onnx))
 #input_names = ["input0"]
 #output_names = ["output0"]
 #inputs = batch_crops
-torch.onnx.export(net, batch_crops, "spiga.onnx", opset_version = 18)  # Use opset_version 11
+torch.onnx.export(net,
+                 batch_crops,
+                 "multiple_input_model.onnx",
+                 verbose=False,
+                 input_names=["image", "model3d", "cam_matrix"],
+                 output_names=["output"],
+             opset_version=18,
+                 export_params=True,
+                )
+#torch.onnx.export(net, batch_crops, output_onnx, input_names=["image","model3d", "cam_matrix"], output_names=["output"], opset_version = 18)  # Use opset_version 11
 #torch.onnx.dynamo_export(net, batch_crops).save("./b.onnx")
 
 #torch_out = torch.onnx._export(net, inputs, output_onnx, export_params=True, verbose=False,
 #                                   input_names=input_names, output_names=output_names)
 ##################end###############
 
-"""
+
 import copy
 from spiga.demo.visualize.plotter import Plotter
 

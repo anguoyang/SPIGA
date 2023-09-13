@@ -68,11 +68,41 @@ class SPIGA(nn.Module):
         # Initialize GAT modules
         self.gcn = nn.ModuleList([StepRegressor(self.embedded_dim, 256, self.nstack) for i in range(self.steps)])
 
+    def check_variables(self, variables):
+        if isinstance(variables, torch.Tensor):
+            # 如果变量是张量
+            if variables.shape[0] != 1:
+                # 如果张量的第一个维度不等于1
+                print(f"Shape: {variables.shape}")
+        elif isinstance(variables, list):
+            # 如果变量是列表
+            for variable in variables:
+                if isinstance(variable, torch.Tensor):
+                    # 如果列表中的变量是张量
+                    if variable.shape[0] != 1:
+                        # 如果张量的第一个维度不等于1
+                        print(f"Shape: {variable.shape}")
+        elif isinstance(variables, dict):
+            # 如果变量是字典（键值对）
+            for key, value in variables.items():
+                if isinstance(value, torch.Tensor):
+                    # 如果值是张量
+                    if value.shape[0] != 1:
+                        # 如果张量的第一个维度不等于1
+                        print(f"Key: {key}, Shape: {value.shape}")
+        else:
+            print("Unsupported variable type")
+
+                        
     def forward(self, data):
         # Inputs: Visual features and points projections
+        self.check_variables(data)
         pts_proj, features = self.backbone_forward(data)
+        self.check_variables(pts_proj)
+        self.check_variables(features)
         # Visual field
         visual_field = features['VisualField'][-1]
+        self.check_variables(visual_field)
 
         # Params compute only once
         gat_prob = []
@@ -80,9 +110,12 @@ class SPIGA(nn.Module):
         for step in range(self.steps):
             # Features generation
             embedded_ft = self.extract_embedded(pts_proj, visual_field, step)
+            self.check_variables(embedded_ft)
 
             # GAT inference
             offset, gat_prob = self.gcn[step](embedded_ft, gat_prob)
+            self.check_variables(offset)
+            self.check_variables(gat_prob)
             offset = F.hardtanh(offset)
 
             # Update coordinates
@@ -90,6 +123,8 @@ class SPIGA(nn.Module):
             features['Landmarks'].append(pts_proj.clone())
 
         features['GATProb'] = gat_prob
+        
+
         return features
 
     def backbone_forward(self, data):
@@ -126,25 +161,52 @@ class SPIGA(nn.Module):
         # Addition
         embedded_ft = visual_ft + shape_ft
         return embedded_ft
+    
+    def create_grid(self,N, C, H, W):
+        grid = torch.empty((N, H, W, 3), dtype=torch.float32)
+        grid.select(-1, 0).copy_(self.linspace_from_neg_one(W))
+        self.check_variables(grid)
+        grid.select(-1, 1).copy_(self.linspace_from_neg_one(H).unsqueeze_(-1))
+        self.check_variables(grid)
+        grid.select(-1, 2).fill_(1)
+        return grid
+
+    def affine_grid(self,theta, size, align_corners=False):
+        N, C, H, W = size
+        grid = self.create_grid(N, C, H, W)
+        grid = grid.view(N, H * W, 3).bmm(theta.transpose(1, 2))
+        grid = grid.view(N, H, W, 2)
+        return grid
+
+    def linspace_from_neg_one(self, num_steps, dtype=torch.float32):
+        r = torch.linspace(-1, 1, num_steps, dtype=torch.float32)
+        r = r * (num_steps - 1) / num_steps
+        return r
+
+    def patch_affine_grid_generator(self):
+        torch.nn.functional.affine_grid = self.affine_grid
 
     def extract_visual_embedded(self, pts_proj, receptive_field, step):
         # Affine matrix generation
         B, L, _ = pts_proj.shape  # Pts_proj range:[0,1]
         centers = pts_proj + 0.5 / self.visual_res  # BxLx2
         centers = centers.reshape(B * L, 2)  # B*Lx2
+        self.check_variables(centers)
         theta_trl = (-1 + centers * 2).unsqueeze(-1)  # BxLx2x1
+        self.check_variables(theta_trl)
         theta_s = self.theta_S[step]  # 2x2
         theta_s = theta_s.repeat(B * L, 1, 1)  # B*Lx2x2
         theta = torch.cat((theta_s, theta_trl), -1)  # B*Lx2x3
 
         # Generate crop grid
         B, C, _, _ = receptive_field.shape
-        grid = torch.nn.functional.affine_grid(theta, (B * L, C, self.kwindow, self.kwindow))
+        #grid = torch.nn.functional.affine_grid(theta, (B * L, C, self.kwindow, self.kwindow))
+        grid = self.affine_grid(theta, (B * L, C, self.kwindow, self.kwindow))
         grid = grid.reshape(B, L, self.kwindow, self.kwindow, 2)
         grid = grid.reshape(B, L, self.kwindow * self.kwindow, 2)
 
         # Crop windows
-        crops = torch.nn.functional.grid_sample(receptive_field, grid, padding_mode="border")  # BxCxLxK*K
+        crops = torch.nn.functional.grid_sample(receptive_field, grid, padding_mode="border", align_corners=True)  # BxCxLxK*K
         crops = crops.transpose(1, 2)  # BxLxCxK*K
         crops = crops.reshape(B * L, C, self.kwindow, self.kwindow)
 
@@ -157,7 +219,9 @@ class SPIGA(nn.Module):
 
     def calculate_distances(self, pts_proj):
         B, L, _ = pts_proj.shape    # BxLx2
+        self.check_variables(pts_proj)
         pts_a = pts_proj.unsqueeze(-2).repeat(1, 1, L, 1)
+        self.check_variables(pts_a)
         pts_b = pts_a.transpose(1, 2)
         dist = pts_a - pts_b
         dist_wo_self = dist[:, self.diagonal_mask, :].reshape(B, L, -1)
