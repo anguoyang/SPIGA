@@ -1,0 +1,6 @@
+--2023-09-12 09:21:12--  https://d1fmewm8udj8en.cloudfront.net/qualcomm_neural_processing_sdk.2.14.2.230905.Linux-AnyCPU.qik?Expires=1694513911
+Resolving d1fmewm8udj8en.cloudfront.net (d1fmewm8udj8en.cloudfront.net)... 13.35.18.76, 13.35.18.9, 13.35.18.219, ...
+Connecting to d1fmewm8udj8en.cloudfront.net (d1fmewm8udj8en.cloudfront.net)|13.35.18.76|:443... connected.
+HTTP request sent, awaiting response... 403 Forbidden
+2023-09-12 09:21:12 ERROR 403: Forbidden.
+
